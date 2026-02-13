@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@layer utilities {
+    .glass-panel {
+        @apply bg-white/80 backdrop-blur-xl border border-white/60 shadow-lg rounded-2xl;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    }
+    
+    .glass-btn {
+        @apply bg-white/60 hover:bg-white/80 active:bg-white backdrop-blur-sm border border-transparent 
+        shadow-sm rounded-lg px-4 py-2 transition-all duration-200 
+        text-slate-600 hover:text-slate-900 font-medium active:scale-95 cursor-pointer;
+    }
+
+    .glass-input {
+        @apply bg-white border border-gray-200 rounded-lg px-4 py-3 outline-none 
+        focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all 
+        placeholder:text-slate-400 text-slate-800 w-full shadow-sm;
+    }
+    
+    .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+    }
+    .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+} 
+
+@layer base {
+  body {
+    min-height: 100vh;
+    @apply text-slate-800 font-sans antialiased bg-slate-50;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent; 
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1); 
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.2);
+}

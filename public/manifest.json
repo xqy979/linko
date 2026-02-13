@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Linko - Stylish Bookmark Manager",
+  "version": "1.0.0",
+  "description": "A cutting-edge, glassmorphism-inspired New Tab and Popup manager.",
+  "permissions": [
+    "bookmarks",
+    "topSites",
+    "storage",
+    "favicon",
+    "tabs",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://feed.mix.sina.com.cn/*",
+    "https://np-anotice-stock.eastmoney.com/*",
+    "https://data.eastmoney.com/*",
+    "https://finance.sina.com.cn/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "logo.png",
+      "32": "logo.png", 
+      "48": "logo.png",
+      "128": "logo.png"
+    }
+  },
+  "icons": {
+    "16": "logo.png",
+    "32": "logo.png", 
+    "48": "logo.png",
+    "128": "logo.png"
+  }
+}
