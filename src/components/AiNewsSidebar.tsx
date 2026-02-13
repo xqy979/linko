@@ -1,5 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
-import { ExternalLink, RefreshCw, X, Loader2, TrendingUp } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  ExternalLink,
+  RefreshCw,
+  X,
+  Loader2,
+  TrendingUp,
+  Calendar,
+} from "lucide-react";
 
 interface NewsItem {
   id: string;
@@ -134,13 +141,43 @@ async function safeFetch(url: string): Promise<any> {
 /**
  * Fetch from Sina Finance roll news — verified working.
  */
-async function fetchSinaFinanceNews(): Promise<NewsItem[]> {
-  const url = isExtension
-    ? `https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516&k=&num=50&page=1&r=${Math.random()}`
-    : `/api/sina/api/roll/get?pageid=153&lid=2516&k=&num=50&page=1&r=${Math.random()}`;
+async function fetchSinaFinanceNews(dateStr?: string): Promise<NewsItem[]> {
+  // Fetch 2 pages concurrently for more data
+  const makeUrl = (page: number) =>
+    isExtension
+      ? `https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516&k=&num=100&page=${page}&r=${Math.random()}`
+      : `/api/sina/api/roll/get?pageid=153&lid=2516&k=&num=100&page=${page}&r=${Math.random()}`;
 
-  const json = await safeFetch(url);
-  const data = json?.result?.data || [];
+  const pages = await Promise.allSettled([
+    safeFetch(makeUrl(1)),
+    safeFetch(makeUrl(2)),
+  ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any[] = [];
+  for (const p of pages) {
+    if (p.status === "fulfilled") {
+      data = data.concat(p.value?.result?.data || []);
+    }
+  }
+
+  // Sina API doesn't support server-side date filtering,
+  // so we filter locally if a date is specified
+  if (dateStr) {
+    const target = new Date(dateStr);
+    const targetStart =
+      new Date(
+        target.getFullYear(),
+        target.getMonth(),
+        target.getDate(),
+      ).getTime() / 1000;
+    const targetEnd = targetStart + 86400;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data = data.filter((item: any) => {
+      const ctime = Number(item.ctime);
+      return ctime >= targetStart && ctime < targetEnd;
+    });
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return data.map((item: any) => {
@@ -158,14 +195,33 @@ async function fetchSinaFinanceNews(): Promise<NewsItem[]> {
 
 /**
  * Fetch from East Money stock announcements API — verified working.
+ * Supports server-side date filtering via begin_time/end_time.
+ * Fetches 3 pages for ~300 items.
  */
-async function fetchEastMoneyNews(): Promise<NewsItem[]> {
-  const url = isExtension
-    ? `https://np-anotice-stock.eastmoney.com/api/security/ann?page_size=50&page_index=1&ann_type=SHA,SZA&client_source=web&f_node=0`
-    : `/api/eastmoney/api/security/ann?page_size=50&page_index=1&ann_type=SHA,SZA&client_source=web&f_node=0`;
+async function fetchEastMoneyNews(dateStr?: string): Promise<NewsItem[]> {
+  let dateParams = "";
+  if (dateStr) {
+    dateParams = `&begin_time=${dateStr}&end_time=${dateStr}`;
+  }
 
-  const json = await safeFetch(url);
-  const list = json?.data?.list || [];
+  const makeUrl = (pageIndex: number) =>
+    isExtension
+      ? `https://np-anotice-stock.eastmoney.com/api/security/ann?page_size=100&page_index=${pageIndex}&ann_type=SHA,SZA&client_source=web&f_node=0${dateParams}`
+      : `/api/eastmoney/api/security/ann?page_size=100&page_index=${pageIndex}&ann_type=SHA,SZA&client_source=web&f_node=0${dateParams}`;
+
+  const pages = await Promise.allSettled([
+    safeFetch(makeUrl(1)),
+    safeFetch(makeUrl(2)),
+    safeFetch(makeUrl(3)),
+  ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let list: any[] = [];
+  for (const p of pages) {
+    if (p.status === "fulfilled") {
+      list = list.concat(p.value?.data?.list || []);
+    }
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return list.map((item: any, index: number) => {
@@ -184,23 +240,39 @@ async function fetchEastMoneyNews(): Promise<NewsItem[]> {
     };
   });
 }
-
 /**
- * Attempt multiple API sources with fallbacks.
+ * Fetch from all API sources in parallel, merge and deduplicate results.
+ * Accepts optional dateStr (YYYY-MM-DD) to filter by date.
  */
-async function fetchStockNews(): Promise<NewsItem[]> {
-  const sources = [fetchSinaFinanceNews, fetchEastMoneyNews];
+async function fetchStockNews(dateStr?: string): Promise<NewsItem[]> {
+  const results = await Promise.allSettled([
+    fetchSinaFinanceNews(dateStr),
+    fetchEastMoneyNews(dateStr),
+  ]);
 
-  for (const fetchFn of sources) {
-    try {
-      const items = await fetchFn();
-      if (items.length > 0) return items;
-    } catch {
-      // Try next source
-    }
+  const allItems: NewsItem[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled") allItems.push(...r.value);
   }
 
-  throw new Error("无法获取股市资讯，请检查网络连接后重试");
+  if (allItems.length === 0) {
+    throw new Error(
+      dateStr ? "该日期暂无资讯数据" : "无法获取股市资讯，请检查网络连接后重试",
+    );
+  }
+
+  // Deduplicate by title
+  const seen = new Set<string>();
+  const unique = allItems.filter((item) => {
+    if (seen.has(item.title)) return false;
+    seen.add(item.title);
+    return true;
+  });
+
+  // Sort by date descending (newest first)
+  unique.sort((a, b) => b.date.localeCompare(a.date));
+
+  return unique;
 }
 
 // ─── Active filter state ──────────────────────────────────────────
@@ -220,12 +292,16 @@ export const AiNewsSidebar = ({ isOpen, onClose }: AiNewsSidebarProps) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState("全部");
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  });
 
-  const fetchNews = useCallback(async () => {
+  const fetchNews = useCallback(async (dateStr?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const items = await fetchStockNews();
+      const items = await fetchStockNews(dateStr || undefined);
       setNews(items);
     } catch (err) {
       setError(err instanceof Error ? err.message : "未知错误");
@@ -237,19 +313,21 @@ export const AiNewsSidebar = ({ isOpen, onClose }: AiNewsSidebarProps) => {
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
-      fetchNews();
+      fetchNews(selectedDate);
     } else {
       document.body.style.overflow = "";
     }
     return () => {
       document.body.style.overflow = "";
     };
-  }, [isOpen, fetchNews]);
+  }, [isOpen, fetchNews, selectedDate]);
 
-  const filteredNews =
-    activeFilter === "全部"
-      ? news
-      : news.filter((item) => item.category === activeFilter);
+  const filteredNews = useMemo(() => {
+    if (activeFilter !== "全部") {
+      return news.filter((item) => item.category === activeFilter);
+    }
+    return news;
+  }, [news, activeFilter]);
 
   if (!isOpen) return null;
 
@@ -269,7 +347,7 @@ export const AiNewsSidebar = ({ isOpen, onClose }: AiNewsSidebarProps) => {
           <div className="sidebar-actions">
             <button
               className="refresh-btn"
-              onClick={fetchNews}
+              onClick={() => fetchNews(selectedDate)}
               disabled={loading}
               title="刷新"
             >
@@ -278,6 +356,28 @@ export const AiNewsSidebar = ({ isOpen, onClose }: AiNewsSidebarProps) => {
             <button className="close-btn" onClick={onClose}>
               <X size={20} />
             </button>
+          </div>
+        </div>
+
+        {/* Date Picker + Category Filter */}
+        <div className="stock-date-row">
+          <div className="stock-date-picker">
+            <Calendar size={14} />
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="stock-date-input"
+            />
+            {selectedDate && (
+              <button
+                className="stock-date-clear"
+                onClick={() => setSelectedDate("")}
+                title="清除日期"
+              >
+                ×
+              </button>
+            )}
           </div>
         </div>
 
@@ -320,7 +420,7 @@ export const AiNewsSidebar = ({ isOpen, onClose }: AiNewsSidebarProps) => {
             <div className="error-state">
               <span>📉</span>
               <p>{error}</p>
-              <button onClick={fetchNews}>重试</button>
+              <button onClick={() => fetchNews(selectedDate)}>重试</button>
             </div>
           ) : filteredNews.length === 0 ? (
             <div className="loading-state">
