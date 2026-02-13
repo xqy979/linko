@@ -142,24 +142,13 @@ async function safeFetch(url: string): Promise<any> {
  * Fetch from Sina Finance roll news — verified working.
  */
 async function fetchSinaFinanceNews(dateStr?: string): Promise<NewsItem[]> {
-  // Fetch 2 pages concurrently for more data
-  const makeUrl = (page: number) =>
-    isExtension
-      ? `https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516&k=&num=100&page=${page}&r=${Math.random()}`
-      : `/api/sina/api/roll/get?pageid=153&lid=2516&k=&num=100&page=${page}&r=${Math.random()}`;
+  const url = isExtension
+    ? `https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516&k=&num=100&page=1&r=${Math.random()}`
+    : `/api/sina/api/roll/get?pageid=153&lid=2516&k=&num=100&page=1&r=${Math.random()}`;
 
-  const pages = await Promise.allSettled([
-    safeFetch(makeUrl(1)),
-    safeFetch(makeUrl(2)),
-  ]);
-
+  const json = await safeFetch(url);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let data: any[] = [];
-  for (const p of pages) {
-    if (p.status === "fulfilled") {
-      data = data.concat(p.value?.result?.data || []);
-    }
-  }
+  let data: any[] = json?.result?.data || [];
 
   // Sina API doesn't support server-side date filtering,
   // so we filter locally if a date is specified
@@ -196,7 +185,6 @@ async function fetchSinaFinanceNews(dateStr?: string): Promise<NewsItem[]> {
 /**
  * Fetch from East Money stock announcements API — verified working.
  * Supports server-side date filtering via begin_time/end_time.
- * Fetches 3 pages for ~300 items.
  */
 async function fetchEastMoneyNews(dateStr?: string): Promise<NewsItem[]> {
   let dateParams = "";
@@ -204,24 +192,12 @@ async function fetchEastMoneyNews(dateStr?: string): Promise<NewsItem[]> {
     dateParams = `&begin_time=${dateStr}&end_time=${dateStr}`;
   }
 
-  const makeUrl = (pageIndex: number) =>
-    isExtension
-      ? `https://np-anotice-stock.eastmoney.com/api/security/ann?page_size=100&page_index=${pageIndex}&ann_type=SHA,SZA&client_source=web&f_node=0${dateParams}`
-      : `/api/eastmoney/api/security/ann?page_size=100&page_index=${pageIndex}&ann_type=SHA,SZA&client_source=web&f_node=0${dateParams}`;
+  const url = isExtension
+    ? `https://np-anotice-stock.eastmoney.com/api/security/ann?page_size=100&page_index=1&ann_type=SHA,SZA&client_source=web&f_node=0${dateParams}`
+    : `/api/eastmoney/api/security/ann?page_size=100&page_index=1&ann_type=SHA,SZA&client_source=web&f_node=0${dateParams}`;
 
-  const pages = await Promise.allSettled([
-    safeFetch(makeUrl(1)),
-    safeFetch(makeUrl(2)),
-    safeFetch(makeUrl(3)),
-  ]);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let list: any[] = [];
-  for (const p of pages) {
-    if (p.status === "fulfilled") {
-      list = list.concat(p.value?.data?.list || []);
-    }
-  }
+  const json = await safeFetch(url);
+  const list = json?.data?.list || [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return list.map((item: any, index: number) => {
